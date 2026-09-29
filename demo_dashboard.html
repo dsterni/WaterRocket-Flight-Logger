@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wasserraketen-Tracker - Demo</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a1a;color:#e0e0e0;font-family:'Courier New',monospace;padding:12px;max-width:500px;margin:0 auto}
+h1{text-align:center;font-size:1.3em;color:#7af;margin-bottom:4px}
+.record-bar{text-align:center;font-size:0.8em;color:#0ff;margin-bottom:6px}
+.phase{text-align:center;padding:6px;border-radius:8px;font-size:1.2em;font-weight:bold;margin-bottom:10px;color:#000;transition:background 0.3s}
+.phase-BEREIT{background:#666}.phase-SCHARF{background:#ff0}.phase-SCHUB{background:#f44}
+.phase-STEIG{background:#fa0}.phase-FALLSCH{background:#f0f}.phase-LANDET{background:#0f0}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px}
+.stat{background:#12122a;border:1px solid #333;border-radius:6px;padding:8px;text-align:center}
+.stat .label{font-size:0.7em;color:#888}
+.stat .value{font-size:1.4em;font-weight:bold}
+.stat .unit{font-size:0.7em;color:#888}
+.green{color:#0f0}.cyan{color:#0ff}.yellow{color:#ff0}.orange{color:#fa0}.magenta{color:#f0f}.red{color:#f44}
+.chart-wrap{background:#12122a;border:1px solid #333;border-radius:8px;padding:8px;margin-bottom:10px}
+canvas{width:100%;height:300px;display:block}
+.legend{display:flex;gap:12px;justify-content:center;font-size:0.75em;margin-top:4px}
+.legend span::before{content:'';display:inline-block;width:12px;height:3px;margin-right:4px;vertical-align:middle}
+.l-stable::before{background:#0f0}.l-wobble::before{background:#ff0}.l-tumble::before{background:#f44}
+
+.rating-box{text-align:center;padding:12px;border-radius:10px;margin-bottom:10px;background:#0a2a0a;border:2px solid #0f0}
+.rating-text{font-size:2em;font-weight:bold;color:#0f0;animation:pulse 0.6s ease-in-out infinite alternate}
+.new-record{color:#ff0;font-size:1.1em;animation:glow 1s ease-in-out infinite alternate}
+@keyframes pulse{from{transform:scale(1)}to{transform:scale(1.08)}}
+@keyframes glow{from{text-shadow:0 0 5px #ff0}to{text-shadow:0 0 20px #ff0,0 0 40px #fa0}}
+
+.summary{background:#0a1a0a;border:1px solid #0f0;border-radius:8px;padding:10px;text-align:center;font-size:0.9em;color:#0f0;margin-bottom:10px}
+
+.lb{margin-bottom:10px}
+.lb h2{font-size:1em;color:#7af;margin-bottom:6px;text-align:center}
+.lb table{width:100%;border-collapse:collapse;font-size:0.75em}
+.lb th{color:#888;text-align:center;padding:3px 4px;border-bottom:1px solid #333}
+.lb td{text-align:center;padding:3px 4px;border-bottom:1px solid #1a1a2a}
+.lb tr:nth-child(1) td{color:#ff0}
+.lb tr:nth-child(2) td{color:#ccc}
+.lb tr:nth-child(3) td{color:#a64}
+
+.demo-controls{position:fixed;bottom:0;left:0;right:0;background:#1a1a2a;padding:8px;text-align:center;border-top:1px solid #333;z-index:10}
+.demo-controls button{background:#333;color:#fff;border:1px solid #555;padding:8px 16px;margin:0 4px;border-radius:6px;font-family:inherit;cursor:pointer;font-size:0.9em}
+.demo-controls button:hover{background:#555}
+</style>
+</head>
+<body>
+<h1>&#127776; Wasserraketen-Tracker</h1>
+<div class="record-bar">Rekord: 32.4m (Flug #3) | Gesamt: 7 Fl&uuml;ge</div>
+<div class="phase phase-LANDET" id="phase">LANDET</div>
+
+<div class="stats">
+  <div class="stat"><div class="label">MAX H&Ouml;HE</div><div class="value cyan" id="maxAlt">28.3</div><div class="unit">m</div></div>
+  <div class="stat"><div class="label">MAX TEMPO</div><div class="value cyan" id="maxSpd">18.7</div><div class="unit">m/s</div></div>
+  <div class="stat"><div class="label">MAX G</div><div class="value orange" id="maxG">4.21</div><div class="unit">G</div></div>
+  <div class="stat"><div class="label">FLUGZEIT</div><div class="value" id="time">6.8</div><div class="unit">s</div></div>
+  <div class="stat"><div class="label">BIS SPITZE</div><div class="value yellow" id="tApogee">2.4</div><div class="unit">s</div></div>
+  <div class="stat"><div class="label">SINKRATE</div><div class="value magenta" id="avgDesc">3.2</div><div class="unit">m/s</div></div>
+  <div class="stat"><div class="label">DREHUNGEN</div><div class="value cyan" id="rolls">2</div><div class="unit">x</div></div>
+  <div class="stat"><div class="label">TAUMELN</div><div class="value red" id="tumbles">0</div><div class="unit">x</div></div>
+  <div class="stat"><div class="label">STABILIT&Auml;T</div><div class="value green" id="stab">82</div><div class="unit">%</div></div>
+  <div class="stat"><div class="label">MAX SPIN</div><div class="value cyan" id="peakSpin">340</div><div class="unit">&deg;/s</div></div>
+  <div class="stat"><div class="label">SCHIRM</div><div class="value magenta">OK</div><div class="unit"></div></div>
+  <div class="stat"><div class="label">FLUG #</div><div class="value">8</div><div class="unit"></div></div>
+</div>
+
+<div class="rating-box" id="ratingBox">
+  <div class="rating-text" id="ratingText">HAMMER!</div>
+  <div class="new-record" id="newRecord" style="display:none">&#11088; NEUER REKORD! &#11088;</div>
+</div>
+
+<div class="chart-wrap">
+  <canvas id="chart" height="300"></canvas>
+  <div class="legend">
+    <span class="l-stable">Stabil (&gt;70%)</span>
+    <span class="l-wobble">Wackelig (40-70%)</span>
+    <span class="l-tumble">Taumeln (&lt;40%)</span>
+  </div>
+</div>
+
+<div class="summary" id="summary">
+MAX H&Ouml;HE: 28.3m (93ft) | MAX TEMPO: 18.7m/s (67km/h)<br>
+MAX G: 4.21G | FLUGZEIT: 6.8s | BIS SPITZE: 2.4s<br>
+DREHUNGEN: 2 | TAUMELN: 0 | STABILIT&Auml;T: 82%<br>
+SINKRATE: 3.2m/s | SCHIRM: OK
+</div>
+
+<div class="lb">
+  <h2>&#127942; Bestenliste - Top Fl&uuml;ge</h2>
+  <table>
+    <thead><tr><th>#</th><th>Flug</th><th>H&ouml;he</th><th>Tempo</th><th>G</th><th>Stab%</th><th>Zeit</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>#3</td><td>32.4m</td><td>21.3</td><td>5.1</td><td>88</td><td>7.2s</td></tr>
+      <tr><td>2</td><td>#8</td><td>28.3m</td><td>18.7</td><td>4.2</td><td>82</td><td>6.8s</td></tr>
+      <tr><td>3</td><td>#5</td><td>24.1m</td><td>16.9</td><td>3.8</td><td>75</td><td>6.1s</td></tr>
+      <tr><td>4</td><td>#1</td><td>18.7m</td><td>14.2</td><td>3.2</td><td>91</td><td>5.4s</td></tr>
+      <tr><td>5</td><td>#7</td><td>15.2m</td><td>12.8</td><td>2.9</td><td>45</td><td>4.8s</td></tr>
+      <tr><td>6</td><td>#2</td><td>12.0m</td><td>10.1</td><td>2.4</td><td>68</td><td>4.2s</td></tr>
+      <tr><td>7</td><td>#6</td><td>8.5m</td><td>8.3</td><td>1.8</td><td>35</td><td>3.6s</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div style="height:60px"></div>
+
+<div class="demo-controls">
+  <button onclick="simFlight('stable')">Stabil</button>
+  <button onclick="simFlight('wobbly')">Wackelig</button>
+  <button onclick="simFlight('tumble')">Taumeln</button>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let canvas = $('chart');
+let ctx = canvas.getContext('2d');
+let samples = [];
+let animFrame = null;
+
+function resizeCanvas() {
+  canvas.width = canvas.clientWidth * (window.devicePixelRatio || 1);
+  canvas.height = canvas.clientHeight * (window.devicePixelRatio || 1);
+  ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+  drawChart();
+}
+window.addEventListener('resize', resizeCanvas);
+
+function stabColor(s) {
+  if (s > 70) { let f=(100-s)/30; return `rgb(${Math.round(f*255)},255,0)`; }
+  if (s > 40) { let f=(70-s)/30; return `rgb(255,${Math.round((1-f)*255)},0)`; }
+  return '#f44';
+}
+
+function drawChart() {
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  ctx.clearRect(0, 0, W, H);
+
+  if (samples.length < 2) {
+    ctx.fillStyle = '#666'; ctx.font = '14px Courier New'; ctx.textAlign = 'center';
+    ctx.fillText('Knopf drücken um Flug zu simulieren!', W/2, H/2);
+    return;
+  }
+
+  const margin = {t:20, r:15, b:30, l:45};
+  const gw = W - margin.l - margin.r;
+  const gh = H - margin.t - margin.b;
+
+  let maxAlt = 1, maxTime = 1;
+  for (const s of samples) {
+    if (s.alt > maxAlt) maxAlt = s.alt;
+    if (s.t > maxTime) maxTime = s.t;
+  }
+  maxAlt *= 1.15; maxTime *= 1.05;
+
+  const toX = t => margin.l + (t / maxTime) * gw;
+  const toY = a => margin.t + gh - (a / maxAlt) * gh;
+
+  ctx.strokeStyle = '#1a1a3a'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 5; i++) {
+    let y = margin.t + (i * gh / 5);
+    ctx.beginPath(); ctx.moveTo(margin.l, y); ctx.lineTo(margin.l + gw, y); ctx.stroke();
+    ctx.fillStyle = '#666'; ctx.font = '10px Courier New'; ctx.textAlign = 'right';
+    ctx.fillText((maxAlt * (5-i) / 5).toFixed(1), margin.l - 4, y + 3);
+  }
+  for (let i = 0; i <= 5; i++) {
+    let x = margin.l + (i * gw / 5);
+    ctx.beginPath(); ctx.moveTo(x, margin.t); ctx.lineTo(x, margin.t + gh); ctx.stroke();
+    ctx.fillStyle = '#666'; ctx.font = '10px Courier New'; ctx.textAlign = 'center';
+    ctx.fillText((maxTime * i / 5).toFixed(1) + 's', x, H - 8);
+  }
+  ctx.strokeStyle = '#444';
+  ctx.beginPath(); ctx.moveTo(margin.l, margin.t); ctx.lineTo(margin.l, margin.t+gh); ctx.lineTo(margin.l+gw, margin.t+gh); ctx.stroke();
+
+  ctx.lineWidth = 3;
+  for (let i = 1; i < samples.length; i++) {
+    const prev = samples[i-1], cur = samples[i];
+    ctx.strokeStyle = stabColor(cur.stab);
+    ctx.beginPath();
+    ctx.moveTo(toX(prev.t), toY(prev.alt));
+    ctx.lineTo(toX(cur.t), toY(cur.alt));
+    ctx.stroke();
+  }
+
+  ctx.globalAlpha = 0.08; ctx.fillStyle = '#0ff';
+  ctx.beginPath(); ctx.moveTo(toX(samples[0].t), toY(0));
+  for (const s of samples) ctx.lineTo(toX(s.t), toY(s.alt));
+  ctx.lineTo(toX(samples[samples.length-1].t), toY(0));
+  ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
+
+  let peak = samples.reduce((a, b) => b.alt > a.alt ? b : a);
+  let px = toX(peak.t), py = toY(peak.alt);
+  ctx.fillStyle = '#f44';
+  ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#f44'; ctx.font = 'bold 12px Courier New'; ctx.textAlign = 'left';
+  ctx.fillText(peak.alt.toFixed(1) + 'm', px + 8, py - 2);
+
+  for (let i = 1; i < samples.length; i++) {
+    if (samples[i].alt < samples[i-1].alt - 0.1) {
+      let cx = toX(samples[i].t), cy = toY(samples[i].alt);
+      ctx.strokeStyle = '#f0f'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(cx, cy-14, 8, Math.PI, 2*Math.PI); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx-8, cy-14); ctx.lineTo(cx, cy); ctx.moveTo(cx+8, cy-14); ctx.lineTo(cx, cy); ctx.stroke();
+      ctx.fillStyle = '#f0f'; ctx.font = '10px Courier New'; ctx.textAlign = 'center';
+      ctx.fillText('SCHIRM', cx, cy-24);
+      break;
+    }
+  }
+}
+
+function generateFlight(type) {
+  const pts = [];
+  const dt = 0.04;
+  let maxH, stabBase, stabVar;
+  if (type === 'stable')      { maxH = 32; stabBase = 90; stabVar = 10; }
+  else if (type === 'wobbly') { maxH = 22; stabBase = 55; stabVar = 25; }
+  else                        { maxH = 14; stabBase = 25; stabVar = 30; }
+
+  for (let t = 0; t < 0.3; t += dt) {
+    let f = t / 0.3;
+    let alt = maxH * 0.15 * f * f;
+    let stab = stabBase + (Math.random()-0.5) * stabVar * 0.5;
+    pts.push({t, alt, stab: Math.max(0, Math.min(100, stab))});
+  }
+  let apogeeT = 2.2 + Math.random() * 0.6;
+  for (let t = 0.3; t < apogeeT; t += dt) {
+    let f = (t - 0.3) / (apogeeT - 0.3);
+    let alt = maxH * (0.15 + 0.85 * (1 - (1-f)*(1-f)));
+    let stabMod = type === 'stable' ? 0 : -Math.sin(f * Math.PI) * 15;
+    let stab = stabBase + stabMod + (Math.random()-0.5) * stabVar;
+    pts.push({t, alt: alt + (Math.random()-0.5)*0.3, stab: Math.max(0, Math.min(100, stab))});
+  }
+  let endT = apogeeT + 3.5 + Math.random();
+  for (let t = apogeeT; t < endT; t += dt) {
+    let f = (t - apogeeT) / (endT - apogeeT);
+    let alt = maxH * (1 - f) * (1 - f * 0.3);
+    let stab = Math.min(100, stabBase + 15) + (Math.random()-0.5) * 10;
+    pts.push({t, alt: Math.max(0, alt + (Math.random()-0.5)*0.2), stab: Math.max(0, Math.min(100, stab))});
+  }
+  return pts;
+}
+
+function simFlight(type) {
+  if (animFrame) cancelAnimationFrame(animFrame);
+  samples = [];
+  const allPts = generateFlight(type);
+  let i = 0;
+  const peak = allPts.reduce((a,b) => b.alt > a.alt ? b : a);
+  const phaseNames = ['BEREIT','SCHARF','SCHUB','STEIG','FALLSCH','LANDET'];
+
+  $('ratingBox').style.display = 'none';
+  $('summary').style.display = 'none';
+  $('newRecord').style.display = 'none';
+
+  function step() {
+    if (i >= allPts.length) {
+      $('phase').textContent = 'LANDET';
+      $('phase').className = 'phase phase-LANDET';
+
+      let rating, ratCol;
+      if (type === 'stable')      { rating = 'HAMMER!'; ratCol = '#0f0'; }
+      else if (type === 'wobbly') { rating = 'GUT!'; ratCol = '#ff0'; }
+      else                        { rating = 'WEITER SO!'; ratCol = '#fa0'; }
+
+      $('ratingBox').style.display = 'block';
+      $('ratingText').textContent = rating;
+      $('ratingText').style.color = ratCol;
+      if (type === 'stable') $('newRecord').style.display = 'block';
+
+      $('summary').style.display = 'block';
+      $('time').textContent = allPts[allPts.length-1].t.toFixed(1);
+      return;
+    }
+
+    samples.push(allPts[i]);
+    let s = allPts[i];
+
+    let phaseName;
+    if (s.t < 0.05) phaseName = 'SCHARF';
+    else if (s.t < 0.3) phaseName = 'SCHUB';
+    else if (s.alt >= peak.alt * 0.98) phaseName = 'STEIG';
+    else if (s.alt < peak.alt * 0.95 && s.t > peak.t) phaseName = 'FALLSCH';
+    else if (s.t < peak.t) phaseName = 'STEIG';
+    else phaseName = 'FALLSCH';
+    $('phase').textContent = phaseName;
+    $('phase').className = 'phase phase-' + phaseName;
+
+    $('maxAlt').textContent = peak.alt.toFixed(1);
+    $('maxSpd').textContent = (peak.alt * 0.66).toFixed(1);
+    $('time').textContent = s.t.toFixed(1);
+    $('tApogee').textContent = peak.t.toFixed(1);
+    $('stab').textContent = s.stab.toFixed(0);
+    $('stab').style.color = s.stab > 70 ? '#0f0' : s.stab > 40 ? '#ff0' : '#f44';
+
+    drawChart();
+    i++;
+    animFrame = requestAnimationFrame(step);
+  }
+
+  let countdown = 5;
+  $('phase').textContent = 'SCHARF';
+  $('phase').className = 'phase phase-SCHARF';
+
+  function tick() {
+    if (countdown > 0) {
+      $('phase').textContent = 'START IN ' + countdown;
+      countdown--;
+      setTimeout(tick, 400);
+    } else {
+      $('phase').textContent = 'SCHUB';
+      $('phase').className = 'phase phase-SCHUB';
+      step();
+    }
+  }
+  tick();
+}
+
+samples = generateFlight('stable');
+resizeCanvas();
+</script>
+</body>
+</html>
